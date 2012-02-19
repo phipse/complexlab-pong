@@ -1,0 +1,10 @@
+maintainer: Philipp Eppelt
+email:	    philipp.eppelt@mailbox.tu-dresden.de
+date:	    19/02/2012
+
+Purpose:
+  These are a bunch of files I wrote during the complex lab at the operating
+  systems chair at Dresden University of Technology. 
+  The goal of the complex lab is to write memory management, graphical
+  output and keyboard input, providing the missing parts to get a simple pong
+  game running on L4 (TuD).
