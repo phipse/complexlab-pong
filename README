@@ -8,3 +8,6 @@ Purpose:
   The goal of the complex lab is to write memory management, graphical
   output and keyboard input, providing the missing parts to get a simple pong
   game running on L4 (TuD).
+
+I am not done with my work on any of these files yet. The most parts are work
+in progress and mostly hacky solutions.
