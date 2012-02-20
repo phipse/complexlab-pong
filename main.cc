@@ -1,3 +1,12 @@
+/* Maintainer:	Philipp Eppelt
+ * Date:	20/02/2012
+ * Purpose:	Implementation of the Client side for Hello-Client-Server
+ *		example, the framebuffer assignment including scrolling back
+ *		and forth in pagesize steps.
+ * ToDo:	Spliting this into several files // extract number of lines
+ *		dynamicly out of the buffer_info // 
+ */
+
 #include <cstdio>
 #include <cstring>
 
@@ -17,6 +26,9 @@
 #include <l4/sys/kdebug.h>
 
 #include "shared.h"
+
+#define LINES_PER_PAGE 51
+
 
 typedef struct text_tracker_t
 {
@@ -118,34 +130,151 @@ Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *out )
 
 
 static text_tracker_t* trackhead;
+static text_tracker_t* tracktail;
 
 void
 add_Line( unsigned linenbr, const char* text )
 {
-  enter_kdebug("addLine");
   text_tracker_t* track = new text_tracker_t();
   track->linenbr = linenbr;
   track->text =  text;
   if( trackhead == 0 )
   {
-    printf( "if: linenbr: %u\n", linenbr ); 
     track->next = 0;
     track->prev = 0;
     trackhead = track;
   }
   else
   {
-    printf( "else: linenbr: %u\n", linenbr ); 
     text_tracker_t* iter = trackhead;
-    printf("before while\n");
-    // error in the following 2 lines
     while( iter->next != 0 && iter->next->linenbr < linenbr )
-      iter->next;
-    printf("after while\n");
+      iter = iter->next;
     track->next = 0;
     track->prev = iter;
     iter->next = track;
   }
+  tracktail = track;
+}
+
+void
+clear_screen()
+{
+  L4Re::Video::View::Info info;
+  fb->view_info( &info );
+  l4re_video_view_info_t info_t;
+  Info_to_type( &info, &info_t );
+  int x = 0;
+  const char* txt = "                                                     ";
+  for( int y = 0; y < 768 ; y+=15)
+  {
+
+    void *addr = pixel_address(x, y, info);
+    gfxbitmap_font_text( addr, 
+	&info_t,
+	GFXBITMAP_DEFAULT_FONT,
+	txt,
+	GFXBITMAP_USE_STRLEN,
+	0, 0,
+	1, 0
+	);
+  }
+}
+
+int
+scroll_page_up( unsigned linenbr)
+{
+  clear_screen();
+  unsigned bottomLine = linenbr - LINES_PER_PAGE;
+  unsigned topLine = bottomLine - LINES_PER_PAGE;
+  if( (int)topLine < 0 )
+  {
+    topLine = 0;
+    bottomLine = topLine + LINES_PER_PAGE;
+  }
+
+  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, linenbr );
+  L4Re::Video::View::Info info;
+
+  if( int r = fb->view_info( &info ) )
+  {
+    printf( "scrollup: error while obtaining view: %i\n", r );
+    return -1;
+  }
+
+  l4re_video_view_info_t info_t;
+  Info_to_type( &info, &info_t );
+  int x = 0;
+  
+  text_tracker_t* iter = trackhead;
+
+  while( iter->linenbr != topLine )
+    iter = iter->next;
+
+  for( int y = 0; y < 768 ; y+=15)
+  {
+
+    void *addr = pixel_address(x, y, info);
+    gfxbitmap_font_text( addr, 
+	&info_t,
+	GFXBITMAP_DEFAULT_FONT,
+	iter->text,
+	GFXBITMAP_USE_STRLEN,
+	0, 0,
+	1, 16
+	);
+    iter = iter->next;
+  }
+
+  return 0;
+}
+
+
+
+int
+scroll_page_down( unsigned linenbr )
+{
+  clear_screen();
+  unsigned topLine = linenbr; 
+  unsigned bottomLine = topLine + LINES_PER_PAGE;
+  text_tracker_t* iter = tracktail;
+  if( iter->linenbr < bottomLine )
+  {
+    bottomLine = iter->linenbr;
+    topLine = bottomLine - LINES_PER_PAGE;
+  }
+
+  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, linenbr );
+  L4Re::Video::View::Info info;
+
+  if( int r = fb->view_info( &info ) )
+  {
+    printf( "scrollup: error while obtaining view: %i\n", r );
+    return -1;
+  }
+
+  l4re_video_view_info_t info_t;
+  Info_to_type( &info, &info_t );
+  int x = 0;
+
+  while( iter->linenbr != topLine )
+    iter = iter->prev;
+  
+  for( int y = 0; y < 768 ; y+=15)
+  {
+
+    void *addr = pixel_address(x, y, info);
+    gfxbitmap_font_text( addr, 
+	&info_t,
+	GFXBITMAP_DEFAULT_FONT,
+	iter->text,
+	GFXBITMAP_USE_STRLEN,
+	0, 0,
+	1, 20 
+	);
+    iter = iter->next;
+  }
+
+  return 0;
 }
 
 
@@ -167,8 +296,8 @@ fb_client()
   if( r != 0) printf( "error while obtaining view_info\n");
   printf("view obtained\n");
 
-  gfxbitmap_color_t ba = 16;
-  gfxbitmap_color_t fo = 1;
+  //gfxbitmap_color_t ba = 16;
+  //gfxbitmap_color_t fo = 1;
   l4re_video_view_info_t info_t; 
   
   Info_to_type( &info, &info_t);
@@ -176,8 +305,8 @@ fb_client()
   if( 0 != gfxbitmap_font_init() )
     printf("gfxbitmap_font_init failed.\n");
   printf("init succeeded\n"); 
-  gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
-  gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
+  //gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
+  //gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
   printf("convert_color done\n"); 
   
   //keep track of the printed lines
@@ -203,6 +332,9 @@ fb_client()
   }
 
   printf("font_text done\n");
+
+  scroll_page_up( incr );
+  scroll_page_down( incr );
   // History needs: Line count tailored to the text in the line
   // information about the currently showed lines
   //
@@ -218,7 +350,7 @@ fb_client()
 //
 
 
-int main(int argc, char **argv)
+int main(int , char** )
 {
   const char *msg = "Hello Server";
   fprintf( stdout, "Hello World! I am your client!\n" );
