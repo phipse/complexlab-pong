@@ -11,7 +11,7 @@
 
 
 void
-Fb_server::add_Line( unsigned linenbr, const char* text )
+Fb_server::addLine( unsigned linenbr, const char* text )
 {
   text_tracker_t* track = new text_tracker_t();
   track->linenbr = linenbr;
@@ -33,28 +33,15 @@ Fb_server::add_Line( unsigned linenbr, const char* text )
 
 
 
-int
-Fb_server::scroll_page_up( )
+void
+Fb_server::printPage( unsigned startnbr )
 {
-  clear_screen();
-  unsigned bottomLine = tracktail->linenbr - linesPerPage;
-  unsigned topLine = bottomLine - linesPerPage;
-  if( (int)topLine < 0 )
-  {
-    topLine = 0;
-    bottomLine = topLine + linesPerPage;
-  }
-  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, tracktail->linenbr );
-
+  text_tracker_t* iter = tracktail;
+  while( iter->linenbr != startnbr )
+    iter = iter->prev;
   int x = 0;
-  text_tracker_t* iter = trackhead;
-
-  while( iter->linenbr != topLine )
-    iter = iter->next;
-
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
+  for( unsigned y = 0; iter != 0 && y < screenHeight; y += defaultFontHeight )
   {
-
     void *addr = pixel_address(x, y, info);
     gfxbitmap_font_text( addr, 
 	&info_t,
@@ -66,46 +53,43 @@ Fb_server::scroll_page_up( )
 	);
     iter = iter->next;
   }
+} 
 
-  return 0;
+
+
+void
+Fb_server::scrollPageUp( )
+{
+  clear_screen();
+  unsigned bottomLine = currentLine - linesPerPage;
+  unsigned topLine = bottomLine - linesPerPage;
+  if( (int)topLine < 0 )
+  {
+    topLine = 0;
+    bottomLine = topLine + linesPerPage;
+  }
+  currentLine = bottomLine;
+  printPage( topLine );
 }
 
 
 
-int
-Fb_server::scroll_page_down( )
+void
+Fb_server::scrollPageDown( )
 {
   clear_screen();
-  unsigned topLine = tracktail->linenbr; 
+  unsigned topLine = currentLine; 
   unsigned bottomLine = topLine + linesPerPage;
   text_tracker_t* iter = tracktail;
   if( iter->linenbr < bottomLine )
   {
     bottomLine = iter->linenbr;
     topLine = bottomLine - linesPerPage;
+    if( (int) topLine < 0 ) topLine = 0;
   }
-  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, tracktail->linenbr );
-  int x = 0;
+  currentLine = bottomLine;
 
-  while( iter->linenbr != topLine )
-    iter = iter->prev;
-  
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
-  {
-
-    void *addr = pixel_address(x, y, info);
-    gfxbitmap_font_text( addr, 
-	&info_t,
-	GFXBITMAP_DEFAULT_FONT,
-	iter->text,
-	GFXBITMAP_USE_STRLEN,
-	0, 0,
-	1, 20 
-	);
-    iter = iter->next;
-  }
-
-  return 0;
+  printPage( topLine );
 }
 
 
@@ -186,8 +170,6 @@ Fb_server::fb_server()
   //gfxbitmap_color_t ba = 16;
   //gfxbitmap_color_t fo = 1;
 
-  if( 0 != gfxbitmap_font_init() )
-    printf("gfxbitmap_font_init failed.\n");
   printf("init succeeded\n"); 
   //gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
   //gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
@@ -211,7 +193,7 @@ Fb_server::fb_server()
 	0, 0,
 	1, 16
 	);
-    add_Line( incr, text );
+    addLine( incr, text );
     incr++;
   }
 
@@ -223,9 +205,9 @@ Fb_server::fb_server()
 void
 Fb_server::printLn( const char* txt )
 {
-  
   unsigned bottomLine = 0;
   unsigned newFirstLine = 0;
+
   if( tracktail != 0 )
   {
     bottomLine = tracktail->linenbr;
@@ -236,26 +218,9 @@ Fb_server::printLn( const char* txt )
   else
     newFirstLine = bottomLine;
   
-  add_Line( ++bottomLine, txt );
-  text_tracker_t* iter = tracktail;
-  while( iter->linenbr != newFirstLine )
-    iter = iter->prev;
-
-  int x = 0;
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
-  {
-
-    void *addr = pixel_address(x, y, info);
-    gfxbitmap_font_text( addr, 
-	&info_t,
-	GFXBITMAP_DEFAULT_FONT,
-	iter->text,
-	GFXBITMAP_USE_STRLEN,
-	0, 0,
-	1, 16
-	);
-    iter = iter->next;
-  } 
+  addLine( ++bottomLine, txt );
+  currentLine = bottomLine;
+  printPage( newFirstLine );
 }
 
 
@@ -274,6 +239,9 @@ Fb_server::Fb_server()
   
   Info_to_type( &info, &info_t);
   
+  if( 0 != gfxbitmap_font_init() )
+    printf("gfxbitmap_font_init failed.\n");
+  
   // init tracking vars
   trackhead = 0;
   tracktail = 0;
@@ -285,3 +253,4 @@ Fb_server::Fb_server()
   printf( "ScreenHeigt: %u, fontHeight: %u\n", screenHeight, defaultFontHeight );
   linesPerPage = screenHeight / defaultFontHeight;
 }
+
