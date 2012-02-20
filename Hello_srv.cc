@@ -14,16 +14,32 @@ static L4Re::Util::Registry_server<> reg_server;
 
 class Hello_srv : public L4::Server_object
 {
+  public:
+    int dispatch( l4_umword_t o, L4::Ipc::Iostream &ios)
+    {
+      l4_msgtag_t tag;
+      ios >> tag;
+
+      unsigned long cl = 0;
+      char *ms = 0;
+      ios >> L4::Ipc::Buf_in<char>( ms, cl );
+      printf( "client says: %s, size: %lu \n", ms, cl );
+      return L4_EOK;
+    }
+};
+
+class SessionServer : public L4::Server_object
+{
   public: 
     int dispatch( l4_umword_t o, L4::Ipc::Iostream &ios );
 };
 
-int Hello_srv::dispatch( l4_umword_t o, L4::Ipc::Iostream &ios )
+int SessionServer::dispatch( l4_umword_t , L4::Ipc::Iostream &ios )
 {
   printf( "dispatch!\n" );
   l4_msgtag_t tag;
   ios >> tag;
-//  printf( "tag.label: %li\n", tag.label() );
+
   // check protocol
   switch( tag.label() )
   {
@@ -46,22 +62,10 @@ int Hello_srv::dispatch( l4_umword_t o, L4::Ipc::Iostream &ios )
       }
     default:
       {
-	int cl = 0;
-	ios >> cl;
-	printf( "clinet says: %i \n", cl );
+	printf( "Bad Protocol\n" );
 	return -L4_ENOSYS;
       }
   }
-/*    printf( "output msg recieved\n" );
-    unsigned long strsize = 0;
-    char *ms = 0;
-    ios >> L4::Ipc::Buf_in<char>( ms, strsize );
-    printf( "strsize: %lu\n", strsize );
-    printf( "MS: %s\n", ms );
-  } 
-  else 
-    printf( "Msg recieved. Unknown opcode!\n" );
-*/
   return 0;
 }
 
@@ -70,10 +74,10 @@ int Hello_srv::dispatch( l4_umword_t o, L4::Ipc::Iostream &ios )
 
 int main( void )
 {
-  static Hello_srv he_srv;
+  static SessionServer sessionSrv;
 
   if( !reg_server.registry()->register_obj( 
-	&he_srv, "hello_server").is_valid() )
+	&sessionSrv, "hello_server").is_valid() )
   {
     printf( "Could not register service, readonly namespace?\n");
     return 1;
