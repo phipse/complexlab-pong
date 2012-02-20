@@ -25,7 +25,7 @@
 #include <l4/util/util.h>
 
 
-#define INITSIZE (10 * L4_PAGESIZE) 
+#define INITSIZE (1 * L4_PAGESIZE) 
 
 typedef struct Memory_header 
 {
@@ -334,7 +334,7 @@ malloc(unsigned size) throw()
   void* returnAddress = static_cast<void*>( ret );
   returnAddress = static_cast<void*>( 
       static_cast<char*>(returnAddress) + sizeof(mem_header) );
-  print_used_free();
+//  print_used_free();
 
   return returnAddress;
 }
@@ -350,5 +350,5 @@ void free(void *p) throw()
 //    init_free( &usedList, &freeList, false );
 
   dequeue_used_enqueue_free( p, &usedList, &freeList );
-  print_used_free();
+  //print_used_free();
 }
