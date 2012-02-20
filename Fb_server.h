@@ -26,10 +26,10 @@ class Fb_server
     int fb_server();
     void clear_screen();
     void printLn( const char* txt );
-
-    void add_Line( unsigned linenbr, const char* text );
-    int scroll_page_up( );
-    int scroll_page_down( );
+    void printPage( unsigned startnbr );
+    void addLine( unsigned linenbr, const char* text );
+    void scrollPageUp( );
+    void scrollPageDown( );
 
   private:
 
@@ -45,12 +45,12 @@ class Fb_server
     // variables for the history / text tracking
     text_tracker_t* trackhead;
     text_tracker_t* tracktail;
+    unsigned currentLine;    
 
     // often used
     unsigned screenHeight;
     unsigned defaultFontHeight;
     unsigned linesPerPage;
-    
 };
 
 #endif //FB_SERVER_H
