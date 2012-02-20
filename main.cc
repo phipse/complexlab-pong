@@ -3,8 +3,6 @@
  * Purpose:	Implementation of the Client side for Hello-Client-Server
  *		example, the framebuffer assignment including scrolling back
  *		and forth in pagesize steps.
- * ToDo:	Spliting this into several files // extract number of lines
- *		dynamicly out of the buffer_info // 
  */
 
 #include <cstdio>
@@ -26,6 +24,8 @@ class Hello
   public:
   int show( char const *str );
 
+  private:
+  
 };
 
 
@@ -41,17 +41,10 @@ int Hello::show( const char *str )
   L4::Ipc::Iostream io( l4_utcb() );
   unsigned long stringsize = strlen( str );
   io << L4::Ipc::Buf_cp_out<const char>( str, stringsize);
-  l4_msgtag_t res = io.call( srv.cap(), L4::Meta::Protocol );
-  printf( "res: %li\n", res.label() );
+  l4_msgtag_t res = io.call( srv.cap() );
   if( l4_ipc_error( res, l4_utcb() ) )
       return 1;
 
-  io.reset();
-
-  io << 0 << 43;
-  res = io.call( srv.cap(), L4::Factory::Protocol );
-  if( l4_ipc_error( res, l4_utcb() ) )
-    return 1;
   return 0; 
 }
 
@@ -72,6 +65,16 @@ int main(int , char** )
 
   Fb_server* fbsrv = new Fb_server();
   fbsrv->fb_server();
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->printLn( msg );
+  fbsrv->scroll_page_up();
+  fbsrv->printLn( msg );
+  
   printf( "EOF\n" );
 
   return 0;
