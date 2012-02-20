@@ -72,7 +72,7 @@ int main(int , char** )
   fbsrv->printLn( msg );
   fbsrv->printLn( msg );
   fbsrv->printLn( msg );
-  fbsrv->scroll_page_up();
+  fbsrv->scrollPageUp();
   fbsrv->printLn( msg );
   
   printf( "EOF\n" );
