@@ -24,12 +24,9 @@ Fb_server::add_Line( unsigned linenbr, const char* text )
   }
   else
   {
-    text_tracker_t* iter = trackhead;
-    while( iter->next != 0 && iter->next->linenbr < linenbr )
-      iter = iter->next;
     track->next = 0;
-    track->prev = iter;
-    iter->next = track;
+    track->prev = tracktail;
+    tracktail->next = track;
   }
   tracktail = track;
 }
@@ -37,33 +34,25 @@ Fb_server::add_Line( unsigned linenbr, const char* text )
 
 
 int
-Fb_server::scroll_page_up( unsigned linenbr )
+Fb_server::scroll_page_up( )
 {
   clear_screen();
-  unsigned bottomLine = linenbr - LINES_PER_PAGE;
-  unsigned topLine = bottomLine - LINES_PER_PAGE;
+  unsigned bottomLine = tracktail->linenbr - linesPerPage;
+  unsigned topLine = bottomLine - linesPerPage;
   if( (int)topLine < 0 )
   {
     topLine = 0;
-    bottomLine = topLine + LINES_PER_PAGE;
+    bottomLine = topLine + linesPerPage;
   }
-  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, linenbr );
+  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, tracktail->linenbr );
 
-  if( int r = fb->view_info( &info ) )
-  {
-    printf( "scrollup: error while obtaining view: %i\n", r );
-    return -1;
-  }
-
-  Info_to_type( &info, &info_t );
   int x = 0;
-  
   text_tracker_t* iter = trackhead;
 
   while( iter->linenbr != topLine )
     iter = iter->next;
 
-  for( int y = 0; y < 768 ; y+=15)
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
   {
 
     void *addr = pixel_address(x, y, info);
@@ -84,32 +73,24 @@ Fb_server::scroll_page_up( unsigned linenbr )
 
 
 int
-Fb_server::scroll_page_down( unsigned linenbr )
+Fb_server::scroll_page_down( )
 {
   clear_screen();
-  unsigned topLine = linenbr; 
-  unsigned bottomLine = topLine + LINES_PER_PAGE;
+  unsigned topLine = tracktail->linenbr; 
+  unsigned bottomLine = topLine + linesPerPage;
   text_tracker_t* iter = tracktail;
   if( iter->linenbr < bottomLine )
   {
     bottomLine = iter->linenbr;
-    topLine = bottomLine - LINES_PER_PAGE;
+    topLine = bottomLine - linesPerPage;
   }
-  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, linenbr );
-
-  if( int r = fb->view_info( &info ) )
-  {
-    printf( "scrollup: error while obtaining view: %i\n", r );
-    return -1;
-  }
-
-  Info_to_type( &info, &info_t );
+  printf( "last: %u, first: %u, linenbr: %u\n", bottomLine, topLine, tracktail->linenbr );
   int x = 0;
 
   while( iter->linenbr != topLine )
     iter = iter->prev;
   
-  for( int y = 0; y < 768 ; y+=15)
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
   {
 
     void *addr = pixel_address(x, y, info);
@@ -180,11 +161,9 @@ Fb_server::Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *ou
 void
 Fb_server::clear_screen()
 {
-  fb->view_info( &info );
-  Info_to_type( &info, &info_t );
   int x = 0;
   const char* txt = "                                                     ";
-  for( int y = 0; y < 768 ; y+=15)
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
   {
 
     void *addr = pixel_address(x, y, info);
@@ -204,14 +183,8 @@ Fb_server::clear_screen()
 int
 Fb_server::fb_server()
 {
-  //enter_kdebug("fbclient");
-  printf( "new goos\n" );
-
   //gfxbitmap_color_t ba = 16;
   //gfxbitmap_color_t fo = 1;
-  l4re_video_view_info_t info_t; 
-  
-  Info_to_type( &info, &info_t);
 
   if( 0 != gfxbitmap_font_init() )
     printf("gfxbitmap_font_init failed.\n");
@@ -226,7 +199,7 @@ Fb_server::fb_server()
   //print text with gfxbitmap_font_text
   const char *text = "La Le Lu, der Mond ist doof!";
   int x = 0;
-  for( int y = 0; y < 768 ; y+=15)
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
   {
 
     void *addr = pixel_address(x, y, info);
@@ -244,10 +217,45 @@ Fb_server::fb_server()
 
   printf("font_text done\n");
 
-  scroll_page_up( incr );
-  scroll_page_down( incr );
-
   return 0;
+}
+
+void
+Fb_server::printLn( const char* txt )
+{
+  
+  unsigned bottomLine = 0;
+  unsigned newFirstLine = 0;
+  if( tracktail != 0 )
+  {
+    bottomLine = tracktail->linenbr;
+    newFirstLine = bottomLine - linesPerPage + 1;
+    if( (int)newFirstLine < 0 )
+      newFirstLine = 0;
+  }
+  else
+    newFirstLine = bottomLine;
+  
+  add_Line( ++bottomLine, txt );
+  text_tracker_t* iter = tracktail;
+  while( iter->linenbr != newFirstLine )
+    iter = iter->prev;
+
+  int x = 0;
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
+  {
+
+    void *addr = pixel_address(x, y, info);
+    gfxbitmap_font_text( addr, 
+	&info_t,
+	GFXBITMAP_DEFAULT_FONT,
+	iter->text,
+	GFXBITMAP_USE_STRLEN,
+	0, 0,
+	1, 16
+	);
+    iter = iter->next;
+  } 
 }
 
 
@@ -264,7 +272,16 @@ Fb_server::Fb_server()
   if( r != 0) printf( "error while obtaining view_info\n");
   printf("view obtained\n");
   
+  Info_to_type( &info, &info_t);
+  
   // init tracking vars
   trackhead = 0;
   tracktail = 0;
+    
+  screenHeight = info.height;
+  defaultFontHeight = gfxbitmap_font_height( GFXBITMAP_DEFAULT_FONT );
+  if( defaultFontHeight == 0 )
+    defaultFontHeight = 15;
+  printf( "ScreenHeigt: %u, fontHeight: %u\n", screenHeight, defaultFontHeight );
+  linesPerPage = screenHeight / defaultFontHeight;
 }
