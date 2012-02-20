@@ -9,8 +9,6 @@
 #include <l4/libgfxbitmap/bitmap.h>
 #include <l4/libgfxbitmap/font.h>
 
-#define LINES_PER_PAGE 51
-
 typedef struct text_tracker_t
 {
   unsigned linenbr;
@@ -27,10 +25,11 @@ class Fb_server
     Fb_server();
     int fb_server();
     void clear_screen();
+    void printLn( const char* txt );
 
     void add_Line( unsigned linenbr, const char* text );
-    int scroll_page_up( unsigned linenbr );
-    int scroll_page_down( unsigned linenbr );
+    int scroll_page_up( );
+    int scroll_page_down( );
 
   private:
 
@@ -41,11 +40,17 @@ class Fb_server
     L4Re::Util::Video::Goos_fb* fb;
     void* base;
     L4Re::Video::View::Info info;
+    l4re_video_view_info_t info_t;
 
     // variables for the history / text tracking
     text_tracker_t* trackhead;
     text_tracker_t* tracktail;
-    l4re_video_view_info_t info_t;
+
+    // often used
+    unsigned screenHeight;
+    unsigned defaultFontHeight;
+    unsigned linesPerPage;
+    
 };
 
 #endif //FB_SERVER_H
