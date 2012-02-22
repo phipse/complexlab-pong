@@ -1,9 +1,10 @@
 /* Maintainer:	Philipp Eppelt
  * Date:	20/02/2012
- * Purpose:	Framebuffer Server
+ * Purpose:	Framebuffer, history and scrolling
  */
 
 #include <cstdio>
+#include <cstring>
 
 #include <l4/hello_srv/Fb_server.h>
 #include <l4/sys/kdebug.h>
@@ -31,7 +32,34 @@ Fb_server::addLine( unsigned linenbr, const char* text )
   tracktail = track;
 }
 
+void
+Fb_server::printChar( char ch )
+{
+  /* adds a new character to the current line */
 
+  static char* newLine = strcat( newLine, &ch );
+  unsigned topLine = currentLine - linesPerPage + 1;
+  if( ch == '\n' )
+  {
+    addLine( ++currentLine, (const char*)newLine );
+    printPage( topLine );
+    *(char*)newLine = ' ';
+  }
+  else
+  {
+    printPage( topLine );
+    int x = 0, y = screenHeight - defaultFontHeight; 
+    void *addr = pixel_address(x, y, info);
+    gfxbitmap_font_text( addr, 
+	&info_t,
+	GFXBITMAP_DEFAULT_FONT,
+	newLine,
+	GFXBITMAP_USE_STRLEN,
+	0, 0,
+	1, 16
+	);
+  }
+}
 
 void
 Fb_server::printPage( unsigned startnbr )
