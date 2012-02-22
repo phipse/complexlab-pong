@@ -80,6 +80,7 @@ KeyboardServer::readScanCode( l4_msgtag_t )
   
   //read from port
   l4_uint8_t scancode = l4util_in8(0x60);
+  // release key will be pressed key plus 0x80
   if( scancode > 0x80 )
     scancode -= 0x80;
 
@@ -212,7 +213,7 @@ KeyboardServer::readScanCode( l4_msgtag_t )
       case 0x35: keycode = '?'; break;
 //      case 0x36: keycode = "RSHIFT"; break;
 //      case 0x38: keycode = "LALT"; break;
-//      case 0x39: keycode = "SPACE"; break;
+      case 0x39: keycode = ' '; break;
     }
   
 //  printf( "Shift: %i, keycode: %c, scancode: %x\n", shift, keycode, scancode );
