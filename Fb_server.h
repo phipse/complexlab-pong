@@ -25,6 +25,7 @@ class Fb_server
     Fb_server();
     int fb_server();
     void clear_screen();
+    void printChar( char ch );
     void printLn( const char* txt );
     void printPage( unsigned startnbr );
     void addLine( unsigned linenbr, const char* text );
