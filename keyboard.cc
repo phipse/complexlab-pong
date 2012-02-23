@@ -11,20 +11,11 @@
 #include <l4/cxx/ipc_server>
 #include <l4/cxx/ipc_stream> 
 
+#include <l4/hello_srv/Fb_server.h>
+#include <l4/hello_srv/keyboard.h>
+
 static L4Re::Util::Registry_server<> server;
 
-class KeyboardServer : public L4::Server_object
-{
-  public:
-    int dispatch( l4_umword_t obj, L4::Ipc::Iostream &ios );
-    bool init();
-  private:
-    char readScanCode( l4_msgtag_t res );
-    void Action( char key );
-    void Ack();
-
-
-};
 
 int
 KeyboardServer::dispatch( l4_umword_t, L4::Ipc::Iostream &ios )
@@ -43,6 +34,7 @@ KeyboardServer::init()
     printf( "irqCap not valid!\n" );
     return false;
   }
+
   // bind irqCap to icu
   long res = l4io_request_irq( 0x1, irqCap.cap() );
   if( res )
@@ -52,6 +44,7 @@ KeyboardServer::init()
   }
 
   L4::Cap<L4::Thread> threadCap( pthread_getl4cap( pthread_self() ) ) ;
+
   // attach thread to irq
   l4_msgtag_t tag = irqCap->attach(0x1 , threadCap);   
   if( tag.has_error() )
@@ -60,6 +53,8 @@ KeyboardServer::init()
     printf( "attach tag label: %li \n", tag.label() );
     return false;
   }
+  fb = new Fb_server();
+
   //wait for interrupts
   while( 1 )
   {
@@ -68,6 +63,7 @@ KeyboardServer::init()
     key = readScanCode( tag );
     Action( key );
   }
+
   return true;
 }
 
@@ -81,8 +77,11 @@ KeyboardServer::readScanCode( l4_msgtag_t )
   //read from port
   l4_uint8_t scancode = l4util_in8(0x60);
   // release key will be pressed key plus 0x80
-  if( scancode > 0x80 )
-    scancode -= 0x80;
+  if( scancode >= 0x80 )
+  // not a release scanCode
+    release = true;
+  else
+    release = false;
 
   char keycode;
   static bool shift = false;
@@ -95,7 +94,15 @@ KeyboardServer::readScanCode( l4_msgtag_t )
   {
     case 0x36:
     case 0x2a: shift = true; break; 
-    case 0xaa: shift = false; break;
+    case 0xb6:
+    case 0xaa: shift = false; break; 
+  }
+  if( shift ) 
+  {
+    scancode = l4util_in8(0x60);
+    scancode >= 0x80 ? release = true : release = false;
+    scancode == 0xb6 ? shift = false : shift = shift;
+    scancode == 0xaa ? shift = false : shift = shift;
   }
   if( !shift )
     switch( scancode )
@@ -110,7 +117,7 @@ KeyboardServer::readScanCode( l4_msgtag_t )
       case 0x09: keycode = '8'; break;
       case 0x0a: keycode = '9'; break;
       case 0x0b: keycode = '0'; break;
-      case 0x0c: keycode = '\\'; break;
+      case 0x0c: keycode = '-'; break;
       case 0x0d: keycode = '`'; break;
 //      case 0x0e: keycode = "bksp"; break; //Backspace
 //      case 0x0f: keycode = "Tap"; break; //tab
@@ -169,7 +176,7 @@ KeyboardServer::readScanCode( l4_msgtag_t )
       case 0x09: keycode = '('; break;
       case 0x0a: keycode = ')'; break;
       case 0x0b: keycode = '='; break;
-      case 0x0c: keycode = '?'; break;
+      case 0x0c: keycode = '_'; break;
       case 0x0d: keycode = '`'; break;
 //      case 0x0e: keycode = "Bksp"; break; //Backspace
 //      case 0x0f: keycode = "TAB"; break; //tab
@@ -224,9 +231,15 @@ KeyboardServer::readScanCode( l4_msgtag_t )
 void
 KeyboardServer::Action(char ch)
 {
-  printf( "action: %c\n", ch);
-  //fb_server->printChar( key );
-  //
+  if( !release && ch )
+    fb->printChar( ch );
+/*    if( ch == '\n' )
+      printf( "action: %c", ch);
+    else 
+      printf( "action: %c\n", ch ); */
+
+ //fb_server->printChar( key );
+ //
  //send key to client
  // ack
  // return
@@ -241,23 +254,22 @@ KeyboardServer::Ack()
 
 
 
-int
-main(void)
+
+KeyboardServer::KeyboardServer()
 {
   printf("Hello Keyboard!\n");
   
   //init server
-  KeyboardServer* key = new KeyboardServer();
-  if( !server.registry()->register_obj( key, "keyb" ).is_valid() )
-  {
-    printf("Couldn't register my service!\n");
-    return 1;
-  }
+//  KeyboardServer* key = new KeyboardServer();
+ // if( !server.registry()->register_obj( key, "keyb" ).is_valid() )
+ // {
+ //   printf("Couldn't register my service!\n");
+    //return 1;
+ // }
 
-  key->init();
-
+  //key->init();
+  init();
   
 //  server.loop();
 
-  return 0;
 }
