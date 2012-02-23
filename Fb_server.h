@@ -12,7 +12,7 @@
 typedef struct text_tracker_t
 {
   unsigned linenbr;
-  const char* text;
+  char* text;
   struct text_tracker_t* next;
   struct text_tracker_t* prev;
 } text_tracker_t;
@@ -26,9 +26,9 @@ class Fb_server
     int fb_server();
     void clear_screen();
     void printChar( char ch );
-    void printLn( const char* txt );
+    void printLn( char* txt );
     void printPage( unsigned startnbr );
-    void addLine( unsigned linenbr, const char* text );
+    void addLine( text_tracker_t* track );
     void scrollPageUp( );
     void scrollPageDown( );
 
