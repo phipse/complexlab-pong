@@ -11,8 +11,8 @@
  * Date: 12.02.2012
  * Purpose: Implementation of malloc and free
  * ToDo: severe testing and debugging / circumvent global variables /
- *    implementing shared memory for usedList and freeList /
- *    out-of-memory detection and reallocation
+ *	  reallocation of dataspaces / coalesce free chunks -> garbage
+ *	  collection
  */
 #include <stdlib.h>
 #include <cstdio>
@@ -24,7 +24,6 @@
 #include <l4/re/mem_alloc>
 #include <l4/util/util.h>
 
-
 #define INITSIZE (1 * L4_PAGESIZE) 
 
 typedef struct Memory_header 
@@ -34,102 +33,14 @@ typedef struct Memory_header
    
 } mem_header;
 
-
-
-bool
-malloc_init( 
-    mem_header** freeList,    // *OUT* pointer to the first header
-    void** lastValidAddress ) // *OUT* pointer to the end of our memory 
+typedef struct nxt_ds
 {
-/* Allocates a chunk of memory and attaches it to the local address space.
- * Additionaly it creates the first header at the location of the returned
- * address and returns a pointer to this first header. 
- * If anything failes, it returns false and an error message. Otherwise it 
- * returns true. 
- */
+  unsigned size;
+  nxt_ds* next;
+} next_dataspace;
 
-  L4::Cap<L4Re::Mem_alloc> memcap = L4Re::Env::env()->mem_alloc();
-  L4::Cap<L4Re::Dataspace> dscap = L4Re::Util::
-		          cap_alloc.alloc<L4Re::Dataspace>();
-  if( int ret = memcap->alloc( INITSIZE, dscap, 
-			  L4Re::Mem_alloc::Continuous ) )
-  {
-    fprintf( stdout, "Memory allocation failed: %i\n", ret );
-    return false;
-  }
-  void *addr = 0;
-  if( int ret = L4Re::Env::env()->rm()->attach( &addr, INITSIZE, 
-	L4Re::Rm::Search_addr, dscap ) )
-  {
-    fprintf( stdout, "Memory not attached to region: %i\n", ret );
-    return false;
-  }
-  *freeList = static_cast<mem_header*>(addr);
-  (*freeList)->size = INITSIZE;
-  (*freeList)->next = 0;
-  if( *freeList != addr )
-  {
-    fprintf( stdout, "Malloc_init: casting fault!\n" );
-    return false;
-  }
-  *lastValidAddress = static_cast<void*>( (char*)addr + INITSIZE + 1);
-  printf( "last valid address: %p\n", *lastValidAddress);
-  return true;
-}
+static next_dataspace* dsList;
 
-
-
-bool
-reallocate_memory( void* lastValidAddress)
-{
-  L4::Cap<L4Re::Mem_alloc> memCap = L4Re::Env::env()->mem_alloc();
-  L4::Cap<L4Re::Dataspace> dsCap = L4Re::Util::
-			cap_alloc.alloc<L4Re::Dataspace>();
-  if( int ret = memCap->alloc( INITSIZE, dsCap, L4Re::Mem_alloc::Continuous ) )
-  {
-    fprintf( stdout, "Memory reallocation failed: %i\n", ret );
-    return false;
-  }
-  l4_addr_t* attachAddr = static_cast<l4_addr_t*>(lastValidAddress);
-  printf( "attachAddr: %p lvd: %p\n", attachAddr, lastValidAddress );
-  if( int ret = L4Re::Env::env()->rm()->attach( &attachAddr, INITSIZE, 
-	0, dsCap ) )
-  {
-    fprintf( stdout, "Attaching memory to region failed: %i\n", ret );
-    return false;
-  }
-/*  if( attachAddr != lastValidAddress ) 
-  {
-    fprintf( stdout, "Attach fault! %p %p \n", lastValidAddress, attachAddr );
-    return false;
-  }*/
-  return true;
-}
-
-
-
-bool
-scan_free_list( 
-    unsigned size,	      // *IN*  size of the to be located slice
-    mem_header **header,      // *OUT* address of the return pointer
-    mem_header *freeList )    // *IN*  headpointer to the list of free slices
-{
-/* Scans the free list to find a suitable slice of memeory. Returns true and a
- * mem_header or false.
- */
-  header = 0;
-  while( freeList != 0 )
-  {
-    if( freeList->size == size )
-    {
-      *header = freeList;
-      return true;
-    }
-    else
-      freeList = freeList->next;
-  }
-  return false;
-}
 
 
 
@@ -151,7 +62,7 @@ create_slice(
 	static_cast<char*>( static_cast<void*>(*freeList) ) + 
 	  (*freeList)->size - neededSpace );
     *header = static_cast<mem_header*>(newChunk);
-  printf( "createSlice: &header : %p\n", *header );
+//  printf( "createSlice: &header : %p\n", *header );
 //  printf( "header->size: %p\n", &((*header)->size) );
     (*header)->size = size;
     (*header)->next = 0;
@@ -198,41 +109,49 @@ create_slice(
 
 
 
+static mem_header *usedList = 0;
+static mem_header *freeList = 0;
+
+
+
 void
 enqueue_used_list( 
-    mem_header *element,     // *IN-OUT* element to enqueue 
-    mem_header **usedList )  // *IN-OUT* pointer to the first used element
+    mem_header *element )    // *IN-OUT* element to enqueue 
 {
 /* enquese an element in the list of used mem_headers. */
-  if( *usedList == 0 )
-    *usedList = element;
+  if( usedList == 0 )
+    usedList = element;
   else
-  {
-    element->next = *usedList;
-    *usedList = element;
-    /*
-    mem_header* iter = *usedList;
+  { 
+    mem_header* iter = usedList;
     while( iter->next != 0 )
       iter = iter->next;
-    iter->next = element;*/
+    iter->next = element;
+    element->next = 0;
+//    printf( "elenext: %p, ele: %p\n", element->next, element );
   }
+  mem_header* iter = usedList;
+  for( ; iter; iter = iter->next )
+    printf( "iter: %p\n", iter );
 }
+
 
 
 void
 dequeue_used_enqueue_free( 
-	void* toFree,		    // *IN* pointer to the to be freed element
-	mem_header** usedList,	    // *IN-OUT*
-	mem_header** freeList )	    // *IN-OUT*
+	void* toFree )		    // *IN* pointer to the to be freed element
 {
   printf( "toFree: %p\n", toFree) ;
   toFree = static_cast<void*>( 
       static_cast<char*>(toFree) - sizeof(mem_header) );
   mem_header* element = static_cast<mem_header*>(toFree);
-  mem_header* iter = *usedList;
+  
+  printf( "toFree: %p, size: %u\n", element, element->size );
+  mem_header* iter = usedList;
   mem_header* previous = 0;
-  if( element == *usedList )
-    *usedList = (*usedList)->next;
+
+  if( element == iter )
+    usedList = usedList->next;
   else
   {
     while( iter != element )
@@ -243,9 +162,9 @@ dequeue_used_enqueue_free(
     previous->next = iter->next; 
   }
   //reuse of previous for iteration through freeList
-  previous = *freeList;
-  if( previous == 0 )
-    *freeList = iter; 
+  previous = freeList;
+  if( freeList == 0 )
+    freeList = iter; 
   else
   {
     while( previous->next != 0 )
@@ -256,42 +175,150 @@ dequeue_used_enqueue_free(
 }
 
 
-
-/*void
-init_free( mem_header** uList, mem_header** fList, bool write ) 
-{*/
-/* Stores pointers to the pointers to the list of used and free slices, so free
- * and malloc share the same lists.
- * PROBABLY WRONG!
- *//*
-  static mem_header* usedList = 0;
-  static mem_header* freeList = 0;
-  if( write )
+bool
+scan_free_list( 
+    unsigned size,	      // *IN*  size of the to be located slice
+    mem_header **header,      // *OUT* address of the return pointer
+    mem_header *fl )    // *IN*  headpointer to the list of free slices
+{
+/* Scans the free list to find a suitable slice of memeory. Returns true and a
+ * mem_header or false.
+ */
+  *header = 0;
+  mem_header* prev = fl;
+  while( fl != 0 )
   {
-    usedList = *uList;
-    freeList = *fList;
+#if 0 
+      printf( "fl: %p\n", fl);
+#endif
+    if( fl->size == size )
+    {
+      *header = fl;
+      if( *header == freeList )
+	freeList = freeList->next;
+      else
+	prev->next = fl->next; 
+      return true;
+    }
+    else
+    {
+      prev = fl;
+      fl = fl->next;
+    }
   }
-  else
-  {
-    *uList = usedList;
-    *fList = freeList;
-  }
+  return false;
 }
-*/
 
-static mem_header *usedList = 0;
-static mem_header *freeList = 0;
+  
 
 void
 print_used_free()
 {
   mem_header* ul = usedList;
   for( ; ul != 0; ul = ul->next )
-    printf( "used: %p\n", ul);
+    printf( "used: %p, size: %u\n", ul, ul->size);
   mem_header* fl = freeList;
   for( ; fl != 0; fl = fl->next )
-    printf( "free: %p\n", fl);
+    printf( "free: %p, size: %u\n", fl, fl->size);
 }
+
+
+
+bool
+malloc_init( 
+    mem_header** freeList,    // *OUT* pointer to the first header
+    void** lastValidAddress ) // *OUT* pointer to the end of our memory 
+{
+/* Allocates a chunk of memory and attaches it to the local address space.
+ * Additionaly it creates the first header at the location of the returned
+ * address and returns a pointer to this first header. 
+ * If anything failes, it returns false and an error message. Otherwise it 
+ * returns true. 
+ */
+
+  L4::Cap<L4Re::Mem_alloc> memcap = L4Re::Env::env()->mem_alloc();
+  L4::Cap<L4Re::Dataspace> dscap = L4Re::Util::
+		          cap_alloc.alloc<L4Re::Dataspace>();
+  if( int ret = memcap->alloc( INITSIZE, dscap, 
+			  L4Re::Mem_alloc::Continuous ) )
+  {
+    fprintf( stdout, "Memory allocation failed: %i\n", ret );
+    return false;
+  }
+  void *addr = 0;
+  if( int ret = L4Re::Env::env()->rm()->attach( &addr, INITSIZE, 
+	L4Re::Rm::Search_addr, dscap ) )
+  {
+    fprintf( stdout, "Memory not attached to region: %i\n", ret );
+    return false;
+  }
+  dsList = static_cast<next_dataspace*>(addr);
+  dsList->size = INITSIZE;
+  dsList->next = 0;
+  *lastValidAddress = static_cast<void*>( (char*)addr + INITSIZE );
+  addr = static_cast<void*>( static_cast<char*>( addr ) + sizeof(mem_header) );
+  *freeList = static_cast<mem_header*>(addr);
+  (*freeList)->size = INITSIZE - sizeof(mem_header);
+  (*freeList)->next = 0;
+#if 1
+  printf( "last valid address: %p\n", *lastValidAddress);
+  printf( "dsList: %p\n", dsList );
+  printf( "firstSlice: %p size: %u\n", *freeList, (*freeList)->size );
+#endif
+  return true;
+}
+
+
+
+bool
+reallocate_memory( unsigned size )
+{
+  L4::Cap<L4Re::Mem_alloc> memCap = L4Re::Env::env()->mem_alloc();
+  L4::Cap<L4Re::Dataspace> dsCap = L4Re::Util::
+			cap_alloc.alloc<L4Re::Dataspace>();
+  if( int ret = memCap->alloc( size, dsCap, L4Re::Mem_alloc::Continuous ) )
+  {
+    fprintf( stdout, "Memory reallocation failed: %i\n", ret );
+    return false;
+  }
+  void* newDs = 0;
+  if( int ret = L4Re::Env::env()->rm()->attach( &newDs, size, 
+	L4Re::Rm::Search_addr, dsCap ) )
+  {
+    fprintf( stdout, "Attaching memory to region failed: %i\n", ret );
+    return false;
+  }
+  next_dataspace* iter = dsList;
+  while( iter->next != 0 )
+    iter = iter->next;
+  iter->next = static_cast<next_dataspace*>(newDs);
+  iter->next->next = 0;
+  unsigned allocSize = 0;
+  if( size % L4_PAGESIZE != 0 )
+    allocSize = (size / L4_PAGESIZE + 1) * L4_PAGESIZE;
+  else
+    allocSize = size / L4_PAGESIZE * L4_PAGESIZE;
+  iter->next->size = allocSize -sizeof(next_dataspace);
+  
+  mem_header* flIter = freeList;
+  while( flIter->next != 0 )
+    flIter = flIter->next;
+  flIter->next = static_cast<mem_header*>( static_cast<void*> (
+		static_cast<char*>(newDs) + sizeof(next_dataspace) ) );
+  flIter->next->size = allocSize - sizeof(next_dataspace) - sizeof(mem_header);
+
+#if 1
+  iter = iter->next;
+  flIter = flIter->next;
+  printf( "DS size: %u, iter: %p\n", iter->size, iter );
+  printf( "Mem_header: %p, size: %u\n", flIter, flIter->size );
+#endif
+
+  return true;
+}
+
+
+
 
 void*
 malloc(unsigned size) throw()
@@ -317,19 +344,19 @@ malloc(unsigned size) throw()
   mem_header *ret=0;
   if( !scan_free_list( size, &ret, freeList ) )
   {
-    printf( "Malloc: Scan free list failed\n" );
+    //printf( "Malloc: Scan free list failed\n" );
     while( !create_slice( size, &ret, &freeList ) )
     {
-      fprintf( stdout, "Slice creation failed! Out of memory?\n" );
-      if( !reallocate_memory( lastValidAddress ) )
+      fprintf( stdout, "Slice creation failed! Out of memory? Allocating!\n" );
+      if( !reallocate_memory( size ) )
       {
 	fprintf( stdout, "PANIC: Additional memory allocation failed!\n" );
 	l4_sleep_forever();
       }
     }
-    printf( "Malloc: slice creation successful\n" );
+    //printf( "Malloc: slice creation successful\n" );
   }
-  enqueue_used_list( ret, &usedList );
+  enqueue_used_list( ret );
 
   void* returnAddress = static_cast<void*>( ret );
   returnAddress = static_cast<void*>( 
@@ -341,14 +368,46 @@ malloc(unsigned size) throw()
 
 
 
+void
+coalesce_neighbouring(  )
+{
+  mem_header* fl = freeList;
+  mem_header* prev = 0;
+//  print_used_free();
+  while( fl->next != 0 )
+  {
+    void* endPtr = (void*) ((unsigned)(fl->next ) 
+	  + fl->next->size + sizeof(mem_header) );
+#if 0 
+    printf( "endPtr: %p, fl: %p\n", endPtr, fl );
+    printf( "flnext: %p, sizeof: %u\n", fl->next, fl->next->size );
+#endif
+    if( endPtr == fl )
+    {
+      fl->next->size += fl->size + sizeof(mem_header);
+      prev->next = fl->next;
+    }
+    else
+    {
+      prev = fl;
+      fl = fl->next;
+    }
+    endPtr = 0;
+  }
+}
+
+
 void free(void *p) throw()
 {
-//  static mem_header* usedList = 0;
-//  static mem_header* freeList = 0;
-//  static bool initialized = false;
-//  if( !initialized ) 
-//    init_free( &usedList, &freeList, false );
-
-  dequeue_used_enqueue_free( p, &usedList, &freeList );
-  //print_used_free();
+  dequeue_used_enqueue_free( p );
+  static int cnt = 0;
+  if( cnt > 1 )
+  {
+    coalesce_neighbouring( );
+    cnt = 0;
+  }
+  cnt++;
+    
+    
+  print_used_free();
 }
