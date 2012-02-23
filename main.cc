@@ -17,6 +17,7 @@
 #include <l4/sys/kdebug.h>
 
 #include <l4/hello_srv/Fb_server.h>
+#include <l4/hello_srv/keyboard.h>
 
 
 class Hello 
@@ -52,7 +53,7 @@ int Hello::show( const char *str )
 
 int main(int , char** )
 {
-  const char *msg = "Hello Server";
+  char *msg = "Hello Server\n";
   fprintf( stdout, "Hello World! I am your client!\n" );
   
   Hello* he_srv = new Hello();
@@ -62,7 +63,7 @@ int main(int , char** )
     return 1;
   }
   delete he_srv;
-
+/*
   Fb_server* fbsrv = new Fb_server();
   fbsrv->fb_server();
   fbsrv->printLn( msg );
@@ -74,7 +75,10 @@ int main(int , char** )
   fbsrv->printLn( msg );
   fbsrv->scrollPageUp();
   fbsrv->printLn( msg );
+  */
   
+  KeyboardServer* keyserv = new KeyboardServer();
+
   printf( "EOF\n" );
 
   return 0;
