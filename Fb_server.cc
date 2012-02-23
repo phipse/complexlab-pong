@@ -10,13 +10,10 @@
 #include <l4/sys/kdebug.h>
 
 
-
+  
 void
-Fb_server::addLine( unsigned linenbr, const char* text )
+Fb_server::addLine( text_tracker_t* track )
 {
-  text_tracker_t* track = new text_tracker_t();
-  track->linenbr = linenbr;
-  track->text =  text;
   if( trackhead == 0 )
   {
     track->next = 0;
@@ -32,34 +29,122 @@ Fb_server::addLine( unsigned linenbr, const char* text )
   tracktail = track;
 }
 
+
+
 void
 Fb_server::printChar( char ch )
 {
   /* adds a new character to the current line */
-
-  static char* newLine = strcat( newLine, &ch );
-  unsigned topLine = currentLine - linesPerPage + 1;
-  if( ch == '\n' )
+  text_tracker_t* newTrack;
+  static bool lastNewLine = true;
+  
+  if( lastNewLine || !tracktail )
   {
-    addLine( ++currentLine, (const char*)newLine );
-    printPage( topLine );
-    *(char*)newLine = ' ';
+    newTrack = new text_tracker_t();
+    newTrack->text = 0;
+    newTrack->linenbr = currentLine++;
+  }
+  else
+    newTrack = tracktail;
+  
+  
+    printf( "text: %p, text: %s, ch: %c\n", &(newTrack->text), newTrack->text, ch);
+  if( newTrack->text != 0 )
+  {
+    int len = strlen( newTrack->text);
+    char* tmp = new char[ len + 1 ];
+    strcpy( tmp, newTrack->text );
+    tmp[len] = ch;
+    tmp[len+1] = 0;
+    delete newTrack->text;
+    newTrack->text = tmp;
   }
   else
   {
-    printPage( topLine );
-    int x = 0, y = screenHeight - defaultFontHeight; 
+    newTrack->text = new char[2];
+    newTrack->text[0] = ch;
+    newTrack->text[1] = 0;
+  }
+
+  unsigned topLine = currentLine - linesPerPage + 1;
+  if( (int) topLine < 0 ) topLine = 0;
+  if( lastNewLine )
+    addLine( newTrack );
+  printPage( topLine );
+  ch == '\n' ? lastNewLine = true : lastNewLine = false;
+}
+
+
+
+void
+Fb_server::printLn( char* txt )
+{
+  unsigned bottomLine = 0;
+  unsigned newFirstLine = 0;
+
+  if( tracktail != 0 )
+  {
+    bottomLine = tracktail->linenbr;
+    newFirstLine = bottomLine - linesPerPage + 1;
+    if( (int)newFirstLine < 0 )
+      newFirstLine = 0;
+  }
+  else
+    newFirstLine = bottomLine;
+
+  text_tracker_t* newTrack = new text_tracker_t();
+  newTrack->linenbr = ++bottomLine;
+  newTrack->text = txt;
+  
+  addLine( newTrack );
+  currentLine = bottomLine;
+  printPage( newFirstLine );
+}
+
+
+
+int
+Fb_server::fb_server()
+{
+  //gfxbitmap_color_t ba = 16;
+  //gfxbitmap_color_t fo = 1;
+
+  printf("init succeeded\n"); 
+  //gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
+  //gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
+  printf("convert_color done\n"); 
+  
+  //keep track of the printed lines
+  int incr = 0;
+
+  //print text with gfxbitmap_font_text
+  char *text = "La Le Lu, der Mond ist doof!";
+  int x = 0;
+  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
+  {
+
     void *addr = pixel_address(x, y, info);
     gfxbitmap_font_text( addr, 
 	&info_t,
 	GFXBITMAP_DEFAULT_FONT,
-	newLine,
+	text,
 	GFXBITMAP_USE_STRLEN,
 	0, 0,
 	1, 16
 	);
+    text_tracker_t* newTrack = new text_tracker_t();
+    newTrack->linenbr = incr;
+    newTrack->text = text;
+    addLine( newTrack );
+    incr++;
   }
+
+  printf("font_text done\n");
+
+  return 0;
 }
+
+
 
 void
 Fb_server::printPage( unsigned startnbr )
@@ -192,67 +277,6 @@ Fb_server::clear_screen()
 
 
 
-int
-Fb_server::fb_server()
-{
-  //gfxbitmap_color_t ba = 16;
-  //gfxbitmap_color_t fo = 1;
-
-  printf("init succeeded\n"); 
-  //gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
-  //gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
-  printf("convert_color done\n"); 
-  
-  //keep track of the printed lines
-  int incr = 0;
-
-  //print text with gfxbitmap_font_text
-  const char *text = "La Le Lu, der Mond ist doof!";
-  int x = 0;
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
-  {
-
-    void *addr = pixel_address(x, y, info);
-    gfxbitmap_font_text( addr, 
-	&info_t,
-	GFXBITMAP_DEFAULT_FONT,
-	text,
-	GFXBITMAP_USE_STRLEN,
-	0, 0,
-	1, 16
-	);
-    addLine( incr, text );
-    incr++;
-  }
-
-  printf("font_text done\n");
-
-  return 0;
-}
-
-void
-Fb_server::printLn( const char* txt )
-{
-  unsigned bottomLine = 0;
-  unsigned newFirstLine = 0;
-
-  if( tracktail != 0 )
-  {
-    bottomLine = tracktail->linenbr;
-    newFirstLine = bottomLine - linesPerPage + 1;
-    if( (int)newFirstLine < 0 )
-      newFirstLine = 0;
-  }
-  else
-    newFirstLine = bottomLine;
-  
-  addLine( ++bottomLine, txt );
-  currentLine = bottomLine;
-  printPage( newFirstLine );
-}
-
-
-
 Fb_server::Fb_server()
 {
   fb =  new L4Re::Util::Video::Goos_fb("fb");
@@ -281,4 +305,8 @@ Fb_server::Fb_server()
   printf( "ScreenHeigt: %u, fontHeight: %u\n", screenHeight, defaultFontHeight );
   linesPerPage = screenHeight / defaultFontHeight;
 }
-
+/*
+int main( void )
+{
+  return 0;
+}*/
