@@ -11,7 +11,7 @@
  * Date: 12.02.2012
  * Purpose: Implementation of malloc and free
  * ToDo: severe testing and debugging / circumvent global variables /
- *	  reallocation of dataspaces / coalesce free chunks -> garbage
+ *	  sort-insert into freeList / coalesce free chunks -> garbage
  *	  collection
  */
 #include <stdlib.h>
@@ -25,6 +25,7 @@
 #include <l4/util/util.h>
 
 #define INITSIZE (1 * L4_PAGESIZE) 
+#define DEBUG 0
 
 typedef struct Memory_header 
 {
@@ -127,12 +128,14 @@ enqueue_used_list(
     while( iter->next != 0 )
       iter = iter->next;
     iter->next = element;
-    element->next = 0;
 //    printf( "elenext: %p, ele: %p\n", element->next, element );
   }
+  element->next = 0;
+#if DEBUG
   mem_header* iter = usedList;
   for( ; iter; iter = iter->next )
     printf( "iter: %p\n", iter );
+#endif
 }
 
 
@@ -188,7 +191,7 @@ scan_free_list(
   mem_header* prev = fl;
   while( fl != 0 )
   {
-#if 0 
+#if DEBUG
       printf( "fl: %p\n", fl);
 #endif
     if( fl->size == size )
@@ -256,11 +259,11 @@ malloc_init(
   dsList->size = INITSIZE;
   dsList->next = 0;
   *lastValidAddress = static_cast<void*>( (char*)addr + INITSIZE );
-  addr = static_cast<void*>( static_cast<char*>( addr ) + sizeof(mem_header) );
+  addr = static_cast<void*>( static_cast<char*>( addr ) + sizeof(next_dataspace) );
   *freeList = static_cast<mem_header*>(addr);
-  (*freeList)->size = INITSIZE - sizeof(mem_header);
+  (*freeList)->size = INITSIZE - sizeof(mem_header) - sizeof(next_dataspace);
   (*freeList)->next = 0;
-#if 1
+#if DEBUG 
   printf( "last valid address: %p\n", *lastValidAddress);
   printf( "dsList: %p\n", dsList );
   printf( "firstSlice: %p size: %u\n", *freeList, (*freeList)->size );
@@ -378,7 +381,7 @@ coalesce_neighbouring(  )
   {
     void* endPtr = (void*) ((unsigned)(fl->next ) 
 	  + fl->next->size + sizeof(mem_header) );
-#if 0 
+#if DEBUG 
     printf( "endPtr: %p, fl: %p\n", endPtr, fl );
     printf( "flnext: %p, sizeof: %u\n", fl->next, fl->next->size );
 #endif
@@ -397,16 +400,64 @@ coalesce_neighbouring(  )
 }
 
 
+
+void
+deallocateDataspace()
+{
+  next_dataspace* iter = dsList;
+  next_dataspace* prev = dsList;
+  mem_header* memIter = freeList;
+  mem_header* memPrev = freeList;
+
+  for(; iter; iter = iter->next )
+  {
+    mem_header* first = static_cast<mem_header*>( static_cast<void*>( 
+	  static_cast<char*>( static_cast<void*>( iter ) )+ sizeof(next_dataspace) ) );
+    l4_addr_t math = first->size + sizeof(mem_header) + sizeof(next_dataspace );
+    printf( "Ds: %p, first: %p\n", iter, first );
+    printf( "math: %lu, iter-size: %u \n", math, iter->size );
+    printf( "sizeof mem_header: %i, nxt_ds: %i\n", sizeof(mem_header), sizeof(next_dataspace) );
+    if( iter->size == first->size + sizeof(mem_header) + sizeof(next_dataspace) )
+    {
+      prev->next = iter->next;
+      int err = L4Re::Env::env()->rm()->detach( static_cast<void*>(iter), 0 );
+
+      if( err )
+      {
+	printf( "Dataspace detach error: %i\n", err );
+	printf( "Dataspace still attached and enqueued!\n" );
+	prev->next = iter;
+      }
+      else
+      {
+	while( memIter != first )
+	{
+	  memPrev = memIter;
+	  memIter = memIter->next;
+	}
+	memPrev->next = memIter->next;
+      }
+#if 1
+      printf( "Ds deallocated: %p, freeListEntry: %p\n", iter, memIter );
+#endif
+    }
+  } 
+}
+
+  
+
 void free(void *p) throw()
 {
   dequeue_used_enqueue_free( p );
   static int cnt = 0;
-  if( cnt > 1 )
+  if( cnt >= 0 )
   {
     coalesce_neighbouring( );
     cnt = 0;
+    deallocateDataspace();
   }
   cnt++;
+  
     
     
   print_used_free();
