@@ -377,7 +377,7 @@ malloc(unsigned size) throw()
     }
     //printf( "Malloc: slice creation successful\n" );
   }
-  printf( "ret: %p\n", ret );
+//  printf( "ret: %p\n", ret );
   enqueue_used_list( ret );
 
   void* returnAddress = static_cast<void*>( ret );
