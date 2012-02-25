@@ -31,8 +31,8 @@
 
 typedef struct Memory_header 
 {
-  unsigned size;
   Memory_header *next;
+  unsigned size;
    
 } mem_header;
 
@@ -344,7 +344,7 @@ reallocate_memory( unsigned size )
 void*
 malloc(unsigned size) throw()
 {
- // enter_kdebug("malloc");
+//   printf("malloc");
 
 //  static mem_header *usedList = 0;
 //  static mem_header *freeList = 0;
@@ -358,8 +358,8 @@ malloc(unsigned size) throw()
     }
     //else
     //  init_free( &usedList, &freeList, true );
-    printf( "Malloc: Init done! freeList: %p \n", freeList );
-    printf( "Malloc: freelist->size: %u \n", freeList->size );
+    //printf( "Malloc: Init done! freeList: %p \n", freeList );
+    //printf( "Malloc: freelist->size: %u \n", freeList->size );
   }
 
   mem_header *ret=0;
@@ -375,16 +375,16 @@ malloc(unsigned size) throw()
 	l4_sleep_forever();
       }
     }
-    printf( "Malloc: slice creation successful\n" );
+    //printf( "Malloc: slice creation successful\n" );
   }
-//  printf( "ret: %p\n", ret );
+  printf( "ret: %p\n", ret );
   enqueue_used_list( ret );
 
   void* returnAddress = static_cast<void*>( ret );
   returnAddress = static_cast<void*>( 
       static_cast<char*>(returnAddress) + sizeof(mem_header) );
 //  print_used_free();
-
+//  printf("Malloc returend\n" );
   return returnAddress;
 }
 
@@ -482,6 +482,6 @@ void free(void *p) throw()
     deallocateDataspace();
   }
   cnt++;
-  print_used_free();
+//  print_used_free();
 //  printf( "Bye Free\n" );
 }
