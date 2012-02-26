@@ -10,75 +10,60 @@
 #include <l4/re/util/object_registry>
 #include <l4/cxx/ipc_server>
 #include <l4/cxx/ipc_stream> 
+#include <l4/re/util/meta>
+#include <l4/util/util.h>
 
 #include <l4/hello_srv/Fb_server.h>
 #include <l4/hello_srv/keyboard.h>
 
-static L4Re::Util::Registry_server<> server;
 
 
 int
 KeyboardServer::dispatch( l4_umword_t, L4::Ipc::Iostream &ios )
 {
-   
-  return 0; 
+  l4_umword_t op;
+  ios >> op;
+  switch( op )
+  {
+    case 1: 
+      {
+	_clnt[current++] = rcv_cap;
+	printf( "client connected: %lu\n", rcv_cap.cap());
+	return L4_EOK;
+      }
+    default:
+      printf( "Unrecognised opcode: %lu \n", op );
+      return -L4_ENOENT;
+  }
 }
 
-bool
-KeyboardServer::init()
-{
-  //subscribe to 0x1
-  L4::Cap<L4::Irq> irqCap = L4Re::Util::cap_alloc.alloc<L4::Irq>();
-  if(!irqCap.is_valid())
+
+
+void 
+KeyboardIrq::pushAll( const char ch )
+{ // sends the keystroke to all subscribers 
+  
+  L4::Ipc::Ostream out( l4_utcb() );
+  out << ch;
+  //printf( "current: %i\n", current);
+  for( int i = 0; i <= current; i++ )
   {
-    printf( "irqCap not valid!\n" );
-    return false;
+    //printf( "clnt[%i]: %lu\n", i, _clnt[i].cap() );
+    out.send(_clnt[i].cap());
+    printf( "sent %c\n", ch);
   }
-
-  // bind irqCap to icu
-  long res = l4io_request_irq( 0x1, irqCap.cap() );
-  if( res )
-  {
-    printf( "l4io_request_irq failed: %li \n", res );
-    return false;
-  }
-
-  L4::Cap<L4::Thread> threadCap( pthread_getl4cap( pthread_self() ) ) ;
-
-  // attach thread to irq
-  l4_msgtag_t tag = irqCap->attach(0x1 , threadCap);   
-  if( tag.has_error() )
-  {
-    printf( "attach msgtag has error: %u \n", tag.has_error() ); 
-    printf( "attach tag label: %li \n", tag.label() );
-    return false;
-  }
-  fb = new Fb_server();
-
-  //wait for interrupts
-  while( 1 )
-  {
-    tag = irqCap->receive();
-    char key = ' ';
-    key = readScanCode( tag );
-    Action( key );
-  }
-
-  return true;
+  out.reset();
 }
+
+
 
 char
-KeyboardServer::readScanCode( l4_msgtag_t )
+KeyboardIrq::readScanCode( )
 {
-  //request 0x60 I/O port
-  long err = l4io_request_ioport(0x60, 1);
-  assert(err == 0);
-  
   //read from port
   l4_uint8_t scancode = l4util_in8(0x60);
   // release key will be pressed key plus 0x80
   if( scancode >= 0x80 )
-  // not a release scanCode
     release = true;
   else
     release = false;
@@ -228,48 +213,82 @@ KeyboardServer::readScanCode( l4_msgtag_t )
   return keycode;
 }
 
-void
-KeyboardServer::Action(char ch)
-{
-  if( !release && ch )
-    fb->printChar( ch );
-/*    if( ch == '\n' )
-      printf( "action: %c", ch);
-    else 
-      printf( "action: %c\n", ch ); */
 
- //fb_server->printChar( key );
- //
- //send key to client
- // ack
- // return
+
+void
+KeyboardIrq::receive()
+//void*
+//receive( void* )
+{ 
+  printf( " ===== recieve ====== \n" );
+  //subscribe to 0x1
+  L4::Cap<L4::Irq> irqCap = L4Re::Util::cap_alloc.alloc<L4::Irq>();
+  if(!irqCap.is_valid())
+  {
+    printf( "irqCap not valid!\n" );
+    return ;
+  }
+
+  // bind irqCap to icu
+  long res = l4io_request_irq( 0x1, irqCap.cap() );
+  if( res )
+  {
+    printf( "l4io_request_irq failed: %li \n", res );
+    return ;
+  }
+
+  L4::Cap<L4::Thread> threadCap( pthread_getl4cap( pthread_self() ) ) ;
+
+  // attach thread to irq
+  l4_msgtag_t tag = irqCap->attach(0x1 , threadCap);   
+  if( tag.has_error() )
+  {
+    printf( "attach msgtag has error: %u \n", tag.has_error() ); 
+    printf( "attach tag label: %li \n", tag.label() );
+    return ;
+  }
+
+  while( 1 )
+  {
+    l4_msgtag_t tag = irqCap->receive();
+    if( tag.has_error() ) 
+      printf( "error: %lu \n", l4_utcb_tcr()->error );
+    char key = ' ';
+    key = readScanCode( );
+    if( !release && key )
+      pushAll( key );
+  }
+}
+
+
+
+void* spawn( void* )
+{
+  printf( "hullo!\n" );
+  KeyboardIrq* irq = new KeyboardIrq();
+  irq->receive();
+  
+  printf( "There must be an recieve error in the Keyboard thread!\n" );
+  return 0;
 
 }
 
-void
-KeyboardServer::Ack()
+int main( void )
 {
-  l4util_out16( 0x20, 0x20);
-}
+  static SessionServer session;
+  printf( "Hello Main!\n" );
 
-
-
-
-KeyboardServer::KeyboardServer()
-{
-  printf("Hello Keyboard!\n");
+  if( !SessionServer::server.registry()->register_obj( 
+	&session, "keybo").is_valid() )
+  {
+    printf( "Could not register service, readonly namespace?\n");
+    return 1;
+  } 
   
-  //init server
-//  KeyboardServer* key = new KeyboardServer();
- // if( !server.registry()->register_obj( key, "keyb" ).is_valid() )
- // {
- //   printf("Couldn't register my service!\n");
-    //return 1;
- // }
+  pthread_t rec;
+  pthread_create( &rec, NULL, spawn, NULL );
 
-  //key->init();
-  init();
-  
-//  server.loop();
+  SessionServer::server.loop();
 
+  return 0;
 }
