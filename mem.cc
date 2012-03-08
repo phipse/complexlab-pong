@@ -25,6 +25,7 @@
 #include <l4/re/env>
 #include <l4/re/mem_alloc>
 #include <l4/util/util.h>
+#include <l4/sys/semaphore>
 
 #define INITSIZE (1 * L4_PAGESIZE) 
 #define DEBUG 0
@@ -45,6 +46,8 @@ typedef struct nxt_ds
 static next_dataspace* dsList;
 static mem_header *freeList = 0;
 static mem_header *usedList = 0;
+L4::Cap<L4::K_semaphore> semacap = L4Re::Util::cap_alloc.alloc<L4::K_semaphore>();
+static L4::Semaphore sema( semacap );
 
  
 void
@@ -52,10 +55,10 @@ print_used_free()
 {
   mem_header* ul = usedList;
   for( ; ul != 0; ul = ul->next )
-    printf( "used: %p, size: %u\n", ul, ul->size);
+    printf( "\t\tused: %p, size: %u\n", ul, ul->size);
   mem_header* fl = freeList;
   for( ; fl != 0; fl = fl->next )
-    printf( "free: %p, size: %u\n", fl, fl->size);
+    printf( "\tfree: %p, size: %u\n", fl, fl->size);
 }
 
 
@@ -164,6 +167,7 @@ dequeue_used_enqueue_free(
 #if DEBUG
   printf( "toFree: %p\n", toFree) ;
   printf( "Elem: %p, size: %u\n", element, element->size );
+  print_used_free();
 #endif
   mem_header* iter = usedList;
   mem_header* previous = 0;
@@ -179,7 +183,8 @@ dequeue_used_enqueue_free(
     }
     previous->next = iter->next; 
   }
-  //reuse of previous for iteration through freeList
+
+
   mem_header* fl = freeList;
   if( freeList == 0 )
   {
@@ -255,6 +260,8 @@ malloc_init(
  * If anything failes, it returns false and an error message. Otherwise it 
  * returns true. 
  */
+
+  
 
   L4::Cap<L4Re::Mem_alloc> memcap = L4Re::Env::env()->mem_alloc();
   L4::Cap<L4Re::Dataspace> dscap = L4Re::Util::
@@ -349,6 +356,9 @@ malloc(unsigned size) throw()
 //  static mem_header *usedList = 0;
 //  static mem_header *freeList = 0;
   static void* lastValidAddress = 0;
+  
+  sema.down();
+
   if( freeList == 0 )
   {
     if( !malloc_init( &freeList, &lastValidAddress ) )
@@ -368,7 +378,7 @@ malloc(unsigned size) throw()
     //printf( "Malloc: Scan free list failed\n" );
     while( !create_slice( size, &ret, &freeList ) )
     {
-      fprintf( stdout, "Slice creation failed! Out of memory? Allocating!\n" );
+     // fprintf( stdout, "Slice creation failed! Out of memory? Allocating!\n" );
       if( !reallocate_memory( size ) )
       {
 	fprintf( stdout, "PANIC: Additional memory allocation failed!\n" );
@@ -380,6 +390,7 @@ malloc(unsigned size) throw()
 //  printf( "ret: %p\n", ret );
   enqueue_used_list( ret );
 
+  sema.up();
   void* returnAddress = static_cast<void*>( ret );
   returnAddress = static_cast<void*>( 
       static_cast<char*>(returnAddress) + sizeof(mem_header) );
@@ -437,19 +448,21 @@ deallocateDataspace()
 #endif
     if( iter->size == math )
     {
-      if( prev != 0 ) prev->next = iter->next;
-      else if( iter->next != 0) dsList = iter->next;
-      else dsList = 0;
-
       memIter = freeList;
       while(  memIter != first )
       {
+	if( memIter == 0 ) // chunk not in free list;
+	  return;
 	memPrev = memIter;
 	memIter = memIter->next;
       }
       if( memPrev != 0 ) memPrev->next = memIter->next;
       else if( memIter->next != 0) freeList = memIter->next;
       else freeList = 0;
+
+      if( prev != 0 ) prev->next = iter->next;
+      else if( iter->next != 0) dsList = iter->next;
+      else dsList = 0;
 
       next_dataspace* tmp = iter->next;
       int err = L4Re::Env::env()->rm()->detach( static_cast<void*>(iter), 0 );
@@ -473,14 +486,19 @@ deallocateDataspace()
 void free(void *p) throw()
 {
 //  printf( "Hello Free\n" );
+  sema.down();
+
   dequeue_used_enqueue_free( p );
   static int cnt = 0;
-  if( cnt >= 3 )
+  if( cnt > 10 )
   {
     coalesce_neighbouring( );
     cnt = 0;
     deallocateDataspace();
   }
+
+  sema.up();
+
   cnt++;
 //  print_used_free();
 //  printf( "Bye Free\n" );
