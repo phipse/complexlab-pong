@@ -32,24 +32,6 @@ public:
 
 
 
-
-class VFB : 
-  public L4::Server_object, 
-  public L4Re::Util::Video::Goos_svr
-{ // Framebuffer server object for every client. Needs to be created with the 
-  // information of the goos framebuffer.
-
-  public:
-    VFB(L4::Cap<void> cap, L4Re::Video::Goos::Info gi, L4Re::Video::View::Info vi);
-
-    int dispatch( l4_umword_t o, L4::Ipc::Iostream &io )
-    {// just forward
-      return Goos_svr::dispatch( o, io );
-    }
-};
-
-
-
 class VDS :
    public L4::Server_object,
    public L4Re::Util::Dataspace_svr
@@ -73,31 +55,34 @@ class VDS :
 }; 
 
 
-
-class Wrapper_so : 
-   public L4::Server_object
-{ // Key communication object to provide a client with the necessary 
-  // interfaces. Which are dataspace server and framebuffer server. 
+class VFB : 
+  public L4::Server_object, 
+  public L4Re::Util::Video::Goos_svr
+{ // Framebuffer server object for every client. Needs to be created with the 
+  // information of the goos framebuffer.
 
   public:
-  Wrapper_so();
-  ~Wrapper_so() throw() {}
-  
-  int dispatch( l4_umword_t o, L4::Ipc::Iostream &io );
-  void switchClient();
+    VFB();
 
-  VFB* _vfb;
-  VDS* _vds;
-  
-  L4::Cap<L4Re::Dataspace> _fbStart;
-  L4::Cap<void> _client;
+    void changeDs();
+    void init( L4::Cap<void> cap, 
+	L4Re::Video::Goos::Info gi, 
+	L4Re::Video::View::Info vi);
+
+    int dispatch( l4_umword_t o, L4::Ipc::Iostream &io )
+    {// just forward
+      return Goos_svr::dispatch( o, io );
+    }
+
 
   private:
-    L4Re::Util::Video::Goos_fb* _fb;
-    void* _fbuffer;
-    L4Re::Video::Goos::Info _gooInfo;
-    L4Re::Video::View::Info _info;
+    VDS* _vds;
 };
+
+L4Re::Util::Video::Goos_fb* _fb;
+void* _fbuffer;
+L4Re::Video::Goos::Info _gooInfo;
+L4Re::Video::View::Info _info;
 
 #if 0
 int
