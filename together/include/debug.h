@@ -19,10 +19,10 @@ typedef struct text_tracker_t
 
 
 
-class Fb_server
+class Debug
 {
   public: 
-    Fb_server();
+    Debug();
     void clear_screen();
     void printChar( char ch );
     void printLn( char* txt );

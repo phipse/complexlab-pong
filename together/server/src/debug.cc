@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include <l4/together/Fb_server.h>
+#include <l4/together/debug.h>
 #include <l4/sys/kdebug.h>
 #include <l4/re/env>
 #include <l4/cxx/ipc_stream>
@@ -17,7 +17,7 @@
 #define DEBUG 0
   
 void
-Fb_server::addLine( text_tracker_t* track )
+Debug::addLine( text_tracker_t* track )
 {
   if( trackhead == 0 )
   {
@@ -37,7 +37,7 @@ Fb_server::addLine( text_tracker_t* track )
 
 
 void
-Fb_server::printChar( char ch )
+Debug::printChar( char ch )
 {
   /* adds a new character to the current line */
   text_tracker_t* newTrack;
@@ -95,7 +95,7 @@ Fb_server::printChar( char ch )
 
 
 void
-Fb_server::printLn( char* txt )
+Debug::printLn( char* txt )
 {
   unsigned bottomLine = 0;
   unsigned newFirstLine = 0;
@@ -122,7 +122,7 @@ Fb_server::printLn( char* txt )
 
 
 void
-Fb_server::printPage( unsigned startnbr )
+Debug::printPage( unsigned startnbr )
 {
   text_tracker_t* iter = tracktail;
   while( iter->linenbr != startnbr )
@@ -146,7 +146,7 @@ Fb_server::printPage( unsigned startnbr )
 
 
 void
-Fb_server::scrollPageUp( )
+Debug::scrollPageUp( )
 {
   clear_screen();
   unsigned bottomLine = currentLine - linesPerPage;
@@ -163,7 +163,7 @@ Fb_server::scrollPageUp( )
 
 
 void
-Fb_server::scrollPageDown( )
+Debug::scrollPageDown( )
 {
   clear_screen();
   unsigned topLine = currentLine; 
@@ -183,7 +183,7 @@ Fb_server::scrollPageDown( )
 
 
 void* 
-Fb_server::pixel_address(int x, int y , L4Re::Video::View::Info info)
+Debug::pixel_address(int x, int y , L4Re::Video::View::Info info)
 {
 //  unsigned bytes_per_line = info.bytes_per_line;
   void *addr =(void*) ((char*) ds_start +
@@ -195,7 +195,7 @@ Fb_server::pixel_address(int x, int y , L4Re::Video::View::Info info)
 
 
 void
-Fb_server::Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *out )
+Debug::Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *out )
 {
   out->flags = in->flags;
   out->view_index = in->view_index;
@@ -231,14 +231,14 @@ Fb_server::Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *ou
 
 
 void
-Fb_server::clear_screen()
+Debug::clear_screen()
 {
   memset( (void*)ds_start, 0 , ds_size ); 
 }
 
 
 
-Fb_server::Fb_server()
+Debug::Debug()
 {
   L4::Cap<L4Re::Video::Goos> fb_cap = 
     L4Re::Env::env()->get_cap<L4Re::Video::Goos>("goosfb");
@@ -279,7 +279,7 @@ Fb_server::Fb_server()
 }
 
 void
-Fb_server::regKeyboard()
+Debug::regKeyboard()
 {
   L4::Cap<void> keyb = L4Re::Env::env()->get_cap<void>( "keyb" );
   if( !keyb.is_valid() )
@@ -296,7 +296,7 @@ Fb_server::regKeyboard()
 
 
 void
-Fb_server::run()
+Debug::run()
 {
   L4::Ipc::Istream in( l4_utcb() );
 //  clear_screen();
@@ -315,7 +315,7 @@ Fb_server::run()
 
 int main( void )
 {
-  Fb_server* debug = new Fb_server();
+  Debug* debug = new Debug();
   debug->regKeyboard();
   debug->run();
 
