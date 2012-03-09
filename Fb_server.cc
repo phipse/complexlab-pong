@@ -6,10 +6,15 @@
 #include <cstdio>
 #include <cstring>
 
-#include <l4/hello_srv/Fb_server.h>
+#include <l4/together/Fb_server.h>
 #include <l4/sys/kdebug.h>
+#include <l4/re/env>
+#include <l4/cxx/ipc_stream>
+#include <l4/re/util/cap_alloc>
+#include <pthread-l4.h>
 
 
+#define DEBUG 0
   
 void
 Fb_server::addLine( text_tracker_t* track )
@@ -47,15 +52,27 @@ Fb_server::printChar( char ch )
   else
     newTrack = tracktail;
   
-  
-    printf( "text: %p, text: %s, ch: %c\n", &(newTrack->text), newTrack->text, ch);
+#if DEBUG 
+    printf( "text: %p, text: %s, ch: %c\n", &(newTrack->text), 
+	newTrack->text, ch);
+#endif
+  int len = 0;
+  char old = ' ';
   if( newTrack->text != 0 )
   {
-    int len = strlen( newTrack->text);
-    char* tmp = new char[ len + 1 ];
+    len = strlen( newTrack->text );
+    if( len == 80 )
+    {
+      old = ch;
+      ch = '\n';
+    }
+//    printf( "  len: %i \n", len );
+    char* tmp = new char[ len + 2 ];
+//    printf( "  tmp: %p\n", tmp );
     strcpy( tmp, newTrack->text );
     tmp[len] = ch;
     tmp[len+1] = 0;
+//    printf( "  delete: %p\n", &(newTrack->text) );
     delete newTrack->text;
     newTrack->text = tmp;
   }
@@ -72,6 +89,7 @@ Fb_server::printChar( char ch )
     addLine( newTrack );
   printPage( topLine );
   ch == '\n' ? lastNewLine = true : lastNewLine = false;
+  if( len == 80 ) printChar( old ); 
 }
 
 
@@ -103,49 +121,6 @@ Fb_server::printLn( char* txt )
 
 
 
-int
-Fb_server::fb_server()
-{
-  //gfxbitmap_color_t ba = 16;
-  //gfxbitmap_color_t fo = 1;
-
-  printf("init succeeded\n"); 
-  //gfxbitmap_color_pix_t back = gfxbitmap_convert_color( &info_t , ba );
-  //gfxbitmap_color_pix_t fore = gfxbitmap_convert_color( &info_t , fo );
-  printf("convert_color done\n"); 
-  
-  //keep track of the printed lines
-  int incr = 0;
-
-  //print text with gfxbitmap_font_text
-  char *text = "La Le Lu, der Mond ist doof!";
-  int x = 0;
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
-  {
-
-    void *addr = pixel_address(x, y, info);
-    gfxbitmap_font_text( addr, 
-	&info_t,
-	GFXBITMAP_DEFAULT_FONT,
-	text,
-	GFXBITMAP_USE_STRLEN,
-	0, 0,
-	1, 16
-	);
-    text_tracker_t* newTrack = new text_tracker_t();
-    newTrack->linenbr = incr;
-    newTrack->text = text;
-    addLine( newTrack );
-    incr++;
-  }
-
-  printf("font_text done\n");
-
-  return 0;
-}
-
-
-
 void
 Fb_server::printPage( unsigned startnbr )
 {
@@ -162,7 +137,7 @@ Fb_server::printPage( unsigned startnbr )
 	iter->text,
 	GFXBITMAP_USE_STRLEN,
 	0, 0,
-	1, 16
+	0xffffff, 0
 	);
     iter = iter->next;
   }
@@ -211,7 +186,7 @@ void*
 Fb_server::pixel_address(int x, int y , L4Re::Video::View::Info info)
 {
 //  unsigned bytes_per_line = info.bytes_per_line;
-  void *addr =(void*) ((char*) base +
+  void *addr =(void*) ((char*) ds_start +
       ( y * info.bytes_per_line ) + 
       ( x * info.pixel_info.bytes_per_pixel()) );
   return addr;
@@ -258,36 +233,30 @@ Fb_server::Info_to_type( L4Re::Video::View::Info *in, l4re_video_view_info_t *ou
 void
 Fb_server::clear_screen()
 {
-  int x = 0;
-  const char* txt = "                                                     ";
-  for( unsigned y = 0; y < screenHeight; y += defaultFontHeight )
-  {
-
-    void *addr = pixel_address(x, y, info);
-    gfxbitmap_font_text( addr, 
-	&info_t,
-	GFXBITMAP_DEFAULT_FONT,
-	txt,
-	GFXBITMAP_USE_STRLEN,
-	0, 0,
-	1, 0
-	);
-  }
+  memset( (void*)ds_start, 0 , ds_size ); 
 }
 
 
 
 Fb_server::Fb_server()
 {
-  fb =  new L4Re::Util::Video::Goos_fb("fb");
-  printf("---------hello fb\n");
-  base = fb->attach_buffer();
-  printf("goos_fb started, buffer attached: %p\n", base);
-  
-  printf("try to obtain view info\n");
-  int r = fb->view_info( &info );
-  if( r != 0) printf( "error while obtaining view_info\n");
-  printf("view obtained\n");
+  L4::Cap<L4Re::Video::Goos> fb_cap = 
+    L4Re::Env::env()->get_cap<L4Re::Video::Goos>("goosfb");
+
+  L4Re::Util::Video::Goos_fb fb( fb_cap );
+  long err;
+  ds_size = fb.buffer()->size();
+
+  err = L4Re::Env::env()->rm()->attach( &ds_start, ds_size,
+      L4Re::Rm::Search_addr, fb.buffer() );
+
+  if( err )
+    printf( "Couldn't attach goos_fb ds: %li\n", err );
+
+  err = fb.view_info( &info );
+
+  if( err )
+    printf( "Failed to obtain view info: %li\n", err );
   
   Info_to_type( &info, &info_t);
   
@@ -300,13 +269,55 @@ Fb_server::Fb_server()
     
   screenHeight = info.height;
   defaultFontHeight = gfxbitmap_font_height( GFXBITMAP_DEFAULT_FONT );
+  
   if( defaultFontHeight == 0 )
     defaultFontHeight = 15;
+  
   printf( "ScreenHeigt: %u, fontHeight: %u\n", screenHeight, defaultFontHeight );
+  
   linesPerPage = screenHeight / defaultFontHeight;
 }
-/*
+
+void
+Fb_server::regKeyboard()
+{
+  L4::Cap<void> keyb = L4Re::Env::env()->get_cap<void>( "keyb" );
+  if( !keyb.is_valid() )
+    printf( "Invalid keyboard capability!\n" );
+  
+  L4::Ipc::Iostream io( l4_utcb() );
+  io << 1 << L4Re::Env::env()->main_thread();
+  l4_msgtag_t tag = io.call( keyb.cap() );
+  
+  if( tag.has_error() )
+    printf( "Failed to register with keyboard server: %lu\n", 
+	l4_utcb_tcr()->error );
+}
+
+
+void
+Fb_server::run()
+{
+  L4::Ipc::Istream in( l4_utcb() );
+//  clear_screen();
+
+  while( true ) 
+  {
+    l4_umword_t sender = 0;
+    in.wait( &sender );
+    char rec;
+    in.get( rec );
+//    printf( "drawing: %c\n", rec );
+    printChar( rec );
+    in.reset();
+  }
+}
+
 int main( void )
 {
+  Fb_server* debug = new Fb_server();
+  debug->regKeyboard();
+  debug->run();
+
   return 0;
-}*/
+}
