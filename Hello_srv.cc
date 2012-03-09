@@ -15,18 +15,20 @@ static L4Re::Util::Registry_server<> reg_server;
 class Hello_srv : public L4::Server_object
 {
   public:
-    int dispatch( l4_umword_t o, L4::Ipc::Iostream &ios)
+    Hello_srv() : cnt(0){};
+    int dispatch( l4_umword_t , L4::Ipc::Iostream &ios)
     {
-      l4_msgtag_t tag;
-      ios >> tag;
-
+      cnt++;
       unsigned long cl = 0;
       char *ms = 0;
       ios >> L4::Ipc::Buf_in<char>( ms, cl );
       printf( "client says: %s, size: %lu \n", ms, cl );
+      printf( "cnt: %i\n", cnt );
       return L4_EOK;
     }
+    int cnt ;
 };
+
 
 class SessionServer : public L4::Server_object
 {
