@@ -58,47 +58,53 @@ VFB::init(L4::Cap<void> cap, L4Re::Video::Goos::Info gi, L4Re::Video::View::Info
     printf( "VFB not registered!\n");
 }
 
-int 
-VDS::changeFb()
+void
+VDS::unmap()
 {
+  // remove fb mapping from virt addr space
+  l4_addr_t tmp = _ds_start;
+  L4::Cap<L4::Task> task = L4Re::Env::env()->task();
 
-  l4_addr_t start = _ds_start;
-  if( start == realStart )
-  { // switch to dummyStart
-    memcpy( (void*) dummyStart, (void*) realStart, _ds_size );
-    Dataspace_svr::_ds_start = dummyStart;
+  while( tmp < _ds_start + _ds_size )
+  {
+    task->unmap( l4_fpage( tmp, 21, L4_FPAGE_RWX ),
+	L4_FP_OTHER_SPACES );
+    tmp += 1024*2048;
   }
-  else if( start == dummyStart )
-  { // switch to realStart
-    memcpy( (void*) realStart, (void *) dummyStart, _ds_size );
-    Dataspace_svr::_ds_start = realStart;
-  }
+}
+
+void
+VDS::dsswitch()
+{
+  if( _ds_start == realStart )
+  // switch to dummyStart
+    _ds_start = dummyStart;
+  else if( _ds_start == dummyStart )
+  // switch to realStart
+    _ds_start = realStart;
   else 
   {
     printf( "fb dataspaces are not valid! Sleeping!\n" );
     l4_sleep_forever();
   }
+}
 
+void
+VDS::copy(l4_addr_t oldstart)
+{
+  clear( _ds_start , _ds_size );
   // save current fb state  OR  restore old state
-//  memcpy( (void*)_ds_start, (void*) start, _ds_size );
-  
-  printf( "old_dsstart: %x, new_dsstart: %x \n", start, _ds_start );
+  memcpy( (void*)_ds_start, (void*) oldstart, _ds_size );
+}
 
-  // remove fb mapping from virt addr space
-  if( start == realStart )
-  {
-    l4_addr_t tmp = start;
-    L4::Cap<L4::Task> task = L4Re::Env::env()->task();
-    while( tmp < start + _ds_size )
-    {
-      task->unmap( l4_fpage( tmp, L4_SUPERPAGESIZE, L4_FPAGE_RW ),
-	  L4_FP_OTHER_SPACES );
-      tmp += L4_SUPERPAGESIZE;
-    }
-  }
-  // do I need an else to get the fpage mapping?
-
-
+int 
+VDS::changeFb()
+{
+  l4_addr_t oldstart = _ds_start;
+  dsswitch();
+  copy( oldstart );
+  printf( "old_dsstart: %x, new_dsstart: %x \n", oldstart, _ds_start );
+  unmap();
   
   return L4_EOK;
 }
