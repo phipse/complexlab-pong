@@ -27,7 +27,7 @@ KeyboardServer::dispatch( l4_umword_t, L4::Ipc::Iostream &ios )
   {
     case 1: 
       {
-	_clnt[current++] = rcv_cap;
+	_clnt.push_back( rcv_cap );
 //	printf( "client connected: %lu\n", rcv_cap.cap());
 	return L4_EOK;
       }
@@ -45,8 +45,9 @@ pushAll( const char ch )
   
   L4::Ipc::Ostream out( l4_utcb() );
   out << ch;
-  for( int i = 0; i < current; i++ )
-    out.send(_clnt[i].cap());
+  std::list< L4::Cap<void> >::iterator it;
+  for( it =_clnt.begin(); it != _clnt.end(); it++ )
+    out.send( it->cap() );
   out.reset();
 }
 
