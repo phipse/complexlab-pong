@@ -6,8 +6,7 @@
 
 
 L4::Cap<void> rcv_cap;
-L4::Cap<void> _clnt[4];
-static int current = 0;
+std::list< L4::Cap<void> > _clnt;
 std::list<char> buffer;
 
 class Keyboard_hooks :
