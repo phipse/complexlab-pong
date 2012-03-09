@@ -41,6 +41,9 @@ class VDS :
     ~VDS() throw() {}
   
     int changeFb();
+    void unmap();
+    void dsswitch();
+    void copy( l4_addr_t oldstart );
     int dispatch( l4_umword_t o, L4::Ipc::Iostream &io )
     {
       o = o | L4_FPAGE_X;
