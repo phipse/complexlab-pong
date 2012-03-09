@@ -16,8 +16,6 @@
 #include <l4/sys/types.h>
 #include <l4/sys/kdebug.h>
 
-#include <l4/hello_srv/Fb_server.h>
-#include <l4/hello_srv/keyboard.h>
 
 
 class Hello 
@@ -77,7 +75,7 @@ int main(int , char** )
   fbsrv->printLn( msg );
   */
   
-  KeyboardServer* keyserv = new KeyboardServer();
+//  KeyboardServer* keyserv = new KeyboardServer();
 
   printf( "EOF\n" );
 
