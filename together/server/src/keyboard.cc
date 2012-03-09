@@ -13,7 +13,7 @@
 #include <l4/re/util/meta>
 #include <l4/util/util.h>
 
-#include <l4/hello_srv/Fb_server.h>
+#include <l4/together/debug.h>
 #include <l4/together/keyboard.h>
 
 
@@ -40,11 +40,11 @@ KeyboardServer::dispatch( l4_umword_t, L4::Ipc::Iostream &ios )
 
 
 void 
-pushAll( const char ch )
+pushAll( const char ch, const bool release )
 { // sends the keystroke to all subscribers 
   
   L4::Ipc::Ostream out( l4_utcb() );
-  out << ch;
+  out << ch << release;
   std::list< L4::Cap<void> >::iterator it;
   for( it =_clnt.begin(); it != _clnt.end(); it++ )
     out.send( it->cap() );
@@ -93,8 +93,8 @@ KeyboardIrq::receive()
       printf( "error: %lu \n", l4_utcb_tcr()->error );
     key = readScanCode( );
     
-    if( !release && key )
-      buffer.push_back( key );
+    buffer.push_back( key );
+    rel.push_back( release );
   }
 }
 
@@ -116,8 +116,9 @@ void* send( void* )
   while( true )
     if( !buffer.empty() )
     {
-      pushAll( buffer.front() );
+      pushAll( buffer.front(), rel.front() );
       buffer.pop_front();
+      rel.pop_front();
     }
     else
       l4_sleep( 10 );
@@ -158,31 +159,30 @@ KeyboardIrq::readScanCode( )
   l4_uint8_t scancode = l4util_in8(0x60);
   // release key will be pressed key plus 0x80
   if( scancode >= 0x80 )
+  {
     release = true;
+    scancode -= 0x80;
+  }
   else
     release = false;
 
+
   char keycode;
   static bool shift = false;
+
+
   if( scancode == 0xff ) 
   {
     printf( "Keyboard failure! \n");
     return -1;
   }
+
   switch( scancode )
   {
     case 0x36:
-    case 0x2a: shift = true; break; 
-    case 0xb6:
-    case 0xaa: shift = false; break; 
+    case 0x2a: shift = !release; break; 
   }
-  if( shift ) 
-  {
-    scancode = l4util_in8(0x60);
-    scancode >= 0x80 ? release = true : release = false;
-    scancode == 0xb6 ? shift = false : shift = shift;
-    scancode == 0xaa ? shift = false : shift = shift;
-  }
+
   if( !shift )
     switch( scancode )
     {

@@ -8,6 +8,7 @@
 L4::Cap<void> rcv_cap;
 std::list< L4::Cap<void> > _clnt;
 std::list<char> buffer;
+std::list<bool> rel;
 
 class Keyboard_hooks :
   public L4::Ipc_svr::Ignore_errors,
