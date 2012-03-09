@@ -23,7 +23,6 @@ class Fb_server
 {
   public: 
     Fb_server();
-    int fb_server();
     void clear_screen();
     void printChar( char ch );
     void printLn( char* txt );
@@ -31,6 +30,8 @@ class Fb_server
     void addLine( text_tracker_t* track );
     void scrollPageUp( );
     void scrollPageDown( );
+    void regKeyboard();
+    void run();
 
   private:
 
@@ -38,8 +39,8 @@ class Fb_server
     void Info_to_type( L4Re::Video::View::Info *in, 
 	    l4re_video_view_info_t *out );
     
-    L4Re::Util::Video::Goos_fb* fb;
-    void* base;
+    l4_addr_t ds_start;
+    l4_size_t ds_size;
     L4Re::Video::View::Info info;
     l4re_video_view_info_t info_t;
 
